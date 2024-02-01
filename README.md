@@ -1,12 +1,9 @@
-# SimpleConfigTrojan-Go
-一个简易配置Trojan-go的流程，拒绝一键脚本，从手动配置做起！
-
 # 纯手动安装Trojan-go的配置文档
 - 前置：需要CentOs7操作系统.
 - 需要更新对应安装包.
 - 需要手动安装BBR plus
 - 安装htop
-- 自己域名为 `new-go.gaoshuye.store ` ，可以根据自己域名将其替换！
+- 自己域名为 `smart.baiduge.store` ，可以根据自己域名将其替换！
 
 ## 安装nginx服务器与配置
 
@@ -16,32 +13,46 @@ yum update
 
 # 安装htop
 yum install epel-release
-yum install htop
 
 # 安装Nginx服务器
 yum install nginx
 
 # 配置Nginx
 cd /etc/nginx/conf.d
-vi /etc/nginx/conf.d/trojan-go.conf
+
+# 备份nginx配置
+cd /etc/nginx/conf.d && mv default.conf default.confbak
+
+echo "" > /etc/nginx/conf.d/trojan-go.conf && vi /etc/nginx/conf.d/trojan-go.conf
+
 
 # 写入如下内容
+
 server {
-    listen 80;
-    listen 8080;
-    server_name new-go.gaoshuye.store;
-    root /usr/share/nginx/html;
-    ssl on;
-    ssl_certificate   /usr/local/etc/new-go.gaoshuye.store/fullchain.crt;
-    ssl_certificate_key  /usr/local/etc/new-go.gaoshuye.store/privkey.key;
-    ssl_ciphers  TLS13-AES-256-GCM-SHA384:TLS13-CHACHA20-POLY1305-SHA256:TLS13-AES-128-GCM-SHA256:TLS13-AES-128-CCM-8-SHA256:TLS13-AES-128-CCM-SHA256:EECDH+CHACHA20:EECDH+CHACHA20-draft:EECDH+ECDSA+AES128:EECDH+aRSA+AES128:RSA+AES128:EECDH+ECDSA+AES256:EECDH+aRSA+AES256:RSA+AES256:EECDH+ECDSA+3DES:EECDH+aRSA+3DES:RSA+3DES:!MD5;
-    ssl_prefer_server_ciphers    on;
-    ssl_protocols                TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;
-    ssl_session_cache            shared:SSL:50m;
-    ssl_session_timeout          10m;
-    ssl_session_tickets          on;
-    error_page 497  https://$host$request_uri;
+    listen       80;
+    listen  [::]:80;
+    server_name  localhost;
+    location / {
+        proxy_pass https://demo.cloudreve.org;
+        proxy_ssl_server_name on;
+    }
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
 }
+
+server {
+    listen 443 ssl; 
+    server_name localhost;
+    ssl_certificate   /usr/local/etc/smart.baiduge.store/fullchain.crt;
+    ssl_certificate_key  /usr/local/etc/smart.baiduge.store/privkey.key;
+    ssl_session_timeout 12d;
+}
+
+# 确定nginx服务状态
+
+systemctl stop nginx && systemctl status nginx
 
 ```
 
@@ -57,13 +68,13 @@ curl https://get.acme.sh | sh
 source ~/.bashrc
 
 # 使用acme.sh获取签发证书.
-acme.sh --issue -d new-go.gaoshuye.store --standalone -k ec-256 --force
+acme.sh --issue -d smart.baiduge.store --standalone -k ec-256 --force
 
 # 创建证书目录，安装证书.
-mkdir -p /usr/local/etc/new-go.gaoshuye.store
+mkdir -p /usr/local/etc/smart.baiduge.store
 
 # 安装证书.
-acme.sh --installcert -d new-go.gaoshuye.store --fullchainpath /usr/local/etc/new-go.gaoshuye.store/fullchain.crt --keypath /usr/local/etc/new-go.gaoshuye.store/privkey.key --ecc --force
+acme.sh --installcert -d smart.baiduge.store --fullchainpath /usr/local/etc/smart.baiduge.store/fullchain.crt --keypath /usr/local/etc/smart.baiduge.store/privkey.key --ecc --force
 ```
 
 ## 安装Trojan-go服务与配置
@@ -72,7 +83,7 @@ acme.sh --installcert -d new-go.gaoshuye.store --fullchainpath /usr/local/etc/ne
 ```bash
 mkdir -p /etc/trojan-go/bin
 
-wget --no-check-certificate -O /etc/trojan-go/bin/trojan-go-linux-amd64.zip "https://github.com/p4gefau1t/trojan-go/releases/download/v0.8.2/trojan-go-linux-amd64.zip"
+wget --no-check-certificate -O /etc/trojan-go/bin/trojan-go-linux-amd64.zip "https://github.com/p4gefau1t/trojan-go/releases/download/v0.10.6/trojan-go-linux-amd64.zip"
 
 # 解压安装.
 unzip -o -d /etc/trojan-go/bin /etc/trojan-go/bin/trojan-go-linux-amd64.zip
@@ -82,13 +93,13 @@ mkdir -p /etc/trojan-go/conf
 vi /etc/trojan-go/conf/server.json
 
 # 创建启动服务.
-vi /etc/systemd/system/trojan-go.service
+echo "" > /etc/systemd/system/trojan-go.service && vi /etc/systemd/system/trojan-go.service
 
 # 写入如下内容.
 [Unit]
 Description=trojan-go
 Documentation=https://github.com/p4gefau1t/trojan-go
-After=network.target
+After=network.target nginx.service
 
 [Service]
 Type=simple
@@ -98,34 +109,37 @@ ExecStart=/etc/trojan-go/bin/trojan-go -config /etc/trojan-go/conf/server.json
 ExecReload=
 ExecStop=/etc/trojan-go/bin/trojan-go
 LimitNOFILE=51200
-Restart=on-failure
-RestartSec=3s
+Restart=no
 
 [Install]
 WantedBy=multi-user.target
+
 
 # 加载服务文件.
 systemctl daemon-reload
 
 # 编辑Trojan-go服务器设置.
-vi /etc/trojan-go/conf/server.json
+echo "" > /etc/trojan-go/conf/server.json && vi /etc/trojan-go/conf/server.json
 
 # 写入如下内容，并且退出，这个是simple版本，但是足够安全，来自于官网设置.
 {
     "run_type": "server",
     "local_addr": "0.0.0.0",
-    "local_port": 443,
+    "local_port": 24052,
     "remote_addr": "127.0.0.1",
     "remote_port": 80,
     "password": [
-        "your_password"
+        "9ae23b11-4dba-450d-a92e-0c3f23686754"
     ],
     "ssl": {
-        "cert": "/usr/local/etc/new-go.gaoshuye.store/fullchain.crt",
-        "key": "/usr/local/etc/new-go.gaoshuye.store/privkey.key"
+        "cert": "/usr/local/etc/smart.baiduge.store/fullchain.crt",
+        "key": "/usr/local/etc/smart.baiduge.store/privkey.key"
     }
 }
 
+# 手动测试运行
+
+/etc/trojan-go/bin/trojan-go -config /etc/trojan-go/conf/server.json
 ```
 
 
@@ -136,47 +150,54 @@ vi /etc/trojan-go/conf/server.json
 systemctl enable nginx
 systemctl enable trojan-go
 
-# 查看状态.
-systemctl status trojan-go
-systemctl status nginx
+# 启动
+systemctl start nginx
+systemctl start trojan-go
 
+# 查看状态.
+systemctl status nginx
+systemctl status trojan-go
 ```
 
 - 默认服务器配置不启用CDN，但是开启多线程.
 
 ```bash
 # 完整Trojan-go服务器端配置.
+
+echo "" > /etc/trojan-go/conf/server.json && vi /etc/trojan-go/conf/server.json
+
+```json
 {
     "run_type": "server",
     "local_addr": "0.0.0.0",
-    "local_port": 443,
+    "local_port": 24052,
     "remote_addr": "127.0.0.1",
     "remote_port": 80,
-    "log_level": 2,
+    "log_level": 3,
     "log_file": "",
     "password": [
-             "your_password"
+        "9ae23b11-4dba-450d-a92e-0c3f23686754"
     ],
     "buffer_size": 32,
     "dns": [],
     "ssl": {
         "verify": true,
         "verify_hostname": true,
-        "cert": "/usr/local/etc/new-go.gaoshuye.store/fullchain.crt",
-        "key": "/usr/local/etc/new-go.gaoshuye.store/privkey.key",
+        "cert": "/usr/local/etc/smart.baiduge.store/fullchain.crt",
+        "key": "/usr/local/etc/smart.baiduge.store/privkey.key",
         "key_password": "",
         "cipher": "",
         "cipher_tls13": "",
         "curves": "",
         "prefer_server_cipher": false,
-        "sni": "new-go.gaoshuye.store",
+        "sni": "smart.baiduge.store",
         "alpn": [
             "http/1.1"
         ],
         "session_ticket": true,
         "reuse_session": true,
         "plain_http_response": "",
-        "fallback_port": 8080,
+        "fallback_port": 443,
         "fingerprint": "firefox",
         "serve_plain_text": false
     },
@@ -212,8 +233,8 @@ systemctl status nginx
         "ssl": {
             "verify": true,
             "verify_hostname": true,
-            "cert": "/usr/local/etc/new-go.gaoshuye.store/fullchain.crt",
-            "key": "/usr/local/etc/new-go.gaoshuye.store/privkey.key",
+            "cert": "/usr/local/etc/smart.baiduge.store/fullchain.crt",
+            "key": "/usr/local/etc/smart.baiduge.store/privkey.key",
             "key_password": "",
             "prefer_server_cipher": false,
             "sni": "",
@@ -250,7 +271,4 @@ systemctl status nginx
         "api_port": 0
     }
 }
-
-
-
 ```
